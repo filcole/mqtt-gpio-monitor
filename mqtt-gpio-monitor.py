@@ -108,10 +108,17 @@ if not MQTT_CLIENT_ID:
     MQTT_CLIENT_ID = APPNAME + "_%d" % os.getpid()
     MQTT_CLEAN_SESSION = True
     
-mqttc = mqtt.Client(MQTT_CLIENT_ID, clean_session=MQTT_CLEAN_SESSION)
+if hasattr(mqtt, "CallbackAPIVersion"):
+    mqttc = mqtt.Client(
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION1,
+        client_id=MQTT_CLIENT_ID,
+        clean_session=MQTT_CLEAN_SESSION,
+    )
+else:
+    mqttc = mqtt.Client(client_id=MQTT_CLIENT_ID, clean_session=MQTT_CLEAN_SESSION)
 
 # MQTT callbacks
-def on_connect(mosq, obj, result_code):
+def on_connect(mosq, obj, flags, result_code):
     """
     Handle connections (or failures) to the broker.
     This is called after the client has received a CONNACK message

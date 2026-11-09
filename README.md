@@ -13,9 +13,13 @@ If using the PiFace extension board you will need to follow the instructions [he
 
 If just using the raw GPIO pins then the RPi.GPIO module should be installed as part of Raspbian.
 
-You will also need an MQTT client, in this case [Paho](https://pypi.python.org/pypi/paho-mqtt/0.9). To install;
+You will also need an MQTT client, in this case [Paho](https://pypi.org/project/paho-mqtt/). Paho 1.x and 2.x are supported; on 2.x the script explicitly selects the legacy callback API to preserve compatibility. To install;
 
     sudo pip install paho-mqtt
+
+To run the MQTT compatibility tests without GPIO hardware or a broker:
+
+    python3 -m unittest discover -s tests
 
 You should now be ready to run the script. It will listen for incoming messages on {topic}/in/+ (where {topic} is specified in the INI file). The incoming messages need to arrive on {topic}/in/{pin} with a value of either 1 or 0. 
 
