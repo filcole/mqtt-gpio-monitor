@@ -13,7 +13,7 @@ If using the PiFace extension board you will need to follow the instructions [he
 
 If just using the raw GPIO pins then the RPi.GPIO module should be installed as part of Raspbian.
 
-You will also need an MQTT client, in this case [Paho](https://pypi.org/project/paho-mqtt/). Paho 1.x and 2.x are supported; on 2.x the script explicitly selects the legacy callback API to preserve compatibility. To install;
+You will also need an MQTT client, in this case [Paho](https://pypi.org/project/paho-mqtt/). The script uses the current callback API on Paho 2.x, with a legacy fallback for Paho 1.x. To install;
 
     sudo pip install paho-mqtt
 

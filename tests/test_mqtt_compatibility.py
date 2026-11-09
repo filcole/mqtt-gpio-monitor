@@ -2,9 +2,11 @@ import ast
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+import warnings
+from unittest.mock import Mock, patch
 
 import paho.mqtt.client as mqtt
+from paho.mqtt.packettypes import PacketTypes
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "mqtt-gpio-monitor.py"
@@ -38,21 +40,74 @@ def load_mqtt_setup(mqtt_module, client_id="gpio-monitor", clean_session=False):
         "MQTT_QOS": 2,
         "MONITOR_REFRESH": "/gpio/refresh",
         "MQTT_LWT": "/clients/gpio",
+        "MQTT_USERNAME": "",
     }
-    setup = ast.Module(body=tree.body[start:end], type_ignores=[])
+    connect = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "connect"
+    )
+    setup = ast.Module(body=tree.body[start:end] + [connect], type_ignores=[])
     exec(compile(setup, str(SCRIPT), "exec"), namespace)
     return namespace
 
 
 class MQTTCompatibilityTests(unittest.TestCase):
     def test_installed_paho_client(self):
-        namespace = load_mqtt_setup(mqtt)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            namespace = load_mqtt_setup(mqtt)
         client = namespace["mqttc"]
         self.addCleanup(client.disconnect)
         self.assertEqual(client._client_id, b"gpio-monitor")
         self.assertFalse(client._clean_session)
         if hasattr(mqtt, "CallbackAPIVersion"):
-            self.assertEqual(client.callback_api_version, mqtt.CallbackAPIVersion.VERSION1)
+            self.assertEqual(client.callback_api_version, mqtt.CallbackAPIVersion.VERSION2)
+
+    def test_installed_paho_registered_callbacks(self):
+        namespace = load_mqtt_setup(mqtt)
+        client = namespace["mqttc"]
+        self.addCleanup(client.disconnect)
+        with patch.object(client, "connect"), patch.object(client, "loop_start"), \
+                patch.object(client, "subscribe") as subscribe, \
+                patch.object(client, "publish") as publish:
+            namespace["connect"]()
+            self.assertIs(client.on_message, namespace["on_message"])
+            if hasattr(mqtt, "CallbackAPIVersion"):
+                from paho.mqtt.reasoncodes import ReasonCode
+
+                client.on_connect(client, None, {}, ReasonCode(PacketTypes.CONNACK), None)
+                client.on_disconnect(
+                    client, None, {}, ReasonCode(PacketTypes.DISCONNECT), None
+                )
+                namespace["time"].sleep.assert_not_called()
+                client.on_disconnect(
+                    client, None, {},
+                    ReasonCode(PacketTypes.DISCONNECT, identifier=128), None
+                )
+            else:
+                client.on_connect(client, None, {}, 0)
+                client.on_disconnect(client, None, 0)
+                namespace["time"].sleep.assert_not_called()
+                client.on_disconnect(client, None, 1)
+            self.assertEqual(subscribe.call_count, 2)
+            publish.assert_called_once_with("/clients/gpio", "1", qos=0, retain=True)
+            namespace["time"].sleep.assert_called_once_with(5)
+
+    @unittest.skipUnless(hasattr(mqtt, "CallbackAPIVersion"), "Requires Paho 2.x")
+    def test_v2_connection_refusals(self):
+        for result_code in range(1, 6):
+            with self.subTest(result_code=result_code):
+                client = Mock()
+                namespace = load_mqtt_setup(
+                    SimpleNamespace(Client=Mock(return_value=client))
+                )
+                reason = mqtt.convert_connack_rc_to_reason_code(result_code)
+                namespace["on_connect"](client, None, {}, reason, None)
+                client.subscribe.assert_not_called()
+                client.publish.assert_not_called()
+                namespace["logging"].warning.assert_called_once_with(
+                    "Connection failed - result code %s" % reason
+                )
 
     def test_paho_1_constructor(self):
         def legacy_client(client_id="", clean_session=True):

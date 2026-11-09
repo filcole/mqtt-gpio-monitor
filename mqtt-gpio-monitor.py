@@ -110,7 +110,7 @@ if not MQTT_CLIENT_ID:
     
 if hasattr(mqtt, "CallbackAPIVersion"):
     mqttc = mqtt.Client(
-        callback_api_version=mqtt.CallbackAPIVersion.VERSION1,
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
         client_id=MQTT_CLIENT_ID,
         clean_session=MQTT_CLEAN_SESSION,
     )
@@ -118,12 +118,13 @@ else:
     mqttc = mqtt.Client(client_id=MQTT_CLIENT_ID, clean_session=MQTT_CLEAN_SESSION)
 
 # MQTT callbacks
-def on_connect(mosq, obj, flags, result_code):
+def on_connect(mosq, obj, flags, result_code, properties=None):
     """
     Handle connections (or failures) to the broker.
     This is called after the client has received a CONNACK message
     from the broker in response to calling connect().
-    The parameter rc is an integer giving the return code:
+    Paho 2.x supplies a ReasonCode and properties. Paho 1.x supplies
+    an integer return code:
 
     0: Success
     1: Refused . unacceptable protocol version
@@ -157,7 +158,7 @@ def on_connect(mosq, obj, flags, result_code):
     elif result_code == 5:
         logging.info("Connection refused - not authorised")
     else:
-        logging.warning("Connection failed - result code %d" % (result_code))
+        logging.warning("Connection failed - result code %s" % (result_code))
 
 def on_disconnect(mosq, obj, result_code):
     """
@@ -168,6 +169,9 @@ def on_disconnect(mosq, obj, result_code):
     else:
         logging.info("Broker connection lost. Retrying in 5s...")
         time.sleep(5)
+
+def on_disconnect_v2(mosq, obj, flags, result_code, properties):
+    on_disconnect(mosq, obj, result_code)
 
 def on_message(mosq, obj, msg):
     """
@@ -238,7 +242,10 @@ def connect():
     """
     # Add the callbacks
     mqttc.on_connect = on_connect
-    mqttc.on_disconnect = on_disconnect
+    if hasattr(mqtt, "CallbackAPIVersion"):
+        mqttc.on_disconnect = on_disconnect_v2
+    else:
+        mqttc.on_disconnect = on_disconnect
     mqttc.on_message = on_message
 
     # Set the login details
